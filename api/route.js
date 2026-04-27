@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
   const r = await fetch("https://valhalla1.openstreetmap.de/route", {
@@ -8,4 +8,4 @@ export default async function handler(req, res) {
   });
   const data = await r.json();
   res.json(data);
-}
+};

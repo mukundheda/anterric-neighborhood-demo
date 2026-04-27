@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neighborhood Boundary Analyzer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+
+  .header { padding: 20px 24px 12px; }
+  .header h1 { font-size: 18px; font-weight: 600; color: #f8fafc; }
+  .header .subtitle { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+
+  .layout { display: flex; height: calc(100vh - 60px); }
+  .sidebar { width: 380px; min-width: 380px; padding: 0 16px 16px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .main { flex: 1; display: flex; flex-direction: column; padding: 0 24px 16px 8px; }
+
+  #map { flex: 1; border-radius: 8px; border: 1px solid #1e293b; min-height: 300px; }
+
+  .card { background: #1e293b; border-radius: 8px; padding: 14px; }
+  .card h3 { font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+
+  label { font-size: 12px; color: #94a3b8; display: block; margin-bottom: 4px; }
+  input[type="text"] { width: 100%; padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #f8fafc; font-size: 13px; outline: none; }
+  input[type="text"]:focus { border-color: #3b82f6; }
+  input[type="text"]::placeholder { color: #475569; }
+
+  .comp-row { display: flex; gap: 6px; align-items: end; margin-bottom: 6px; }
+  .comp-row input { flex: 1; }
+  .comp-row .remove-btn { padding: 8px 10px; background: #7f1d1d; border: 1px solid #991b1b; border-radius: 6px; color: #fca5a5; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .comp-row .remove-btn:hover { background: #991b1b; }
+
+  .add-btn { padding: 6px 12px; background: transparent; border: 1px dashed #334155; border-radius: 6px; color: #64748b; cursor: pointer; font-size: 12px; width: 100%; margin-top: 4px; }
+  .add-btn:hover { border-color: #475569; color: #94a3b8; }
+
+  .analyze-btn { padding: 10px 16px; background: #2563eb; border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 4px; }
+  .analyze-btn:hover { background: #1d4ed8; }
+  .analyze-btn:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+  .status { font-size: 12px; color: #94a3b8; min-height: 18px; margin-top: 6px; }
+  .status.error { color: #f87171; }
+
+  .results-table { width: 100%; margin-top: 4px; }
+  .results-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .results-table th { text-align: left; padding: 8px 10px; color: #94a3b8; font-weight: 500; border-bottom: 1px solid #334155; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .results-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; }
+  .results-table tr:hover { background: #1e293b; }
+  .same { color: #4ade80; font-weight: 600; }
+  .diff { color: #f87171; font-weight: 600; }
+  .fail { color: #f87171; }
+
+  .legend { display: flex; gap: 14px; padding: 8px 0; font-size: 11px; color: #94a3b8; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .controls { display: flex; gap: 14px; align-items: center; padding: 6px 0; }
+  .controls label { font-size: 11px; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 4px; margin: 0; }
+
+  .footer { font-size: 10px; color: #334155; text-align: right; padding: 4px 0; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .method-note { font-size: 11px; color: #475569; padding: 8px 0 0; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Neighborhood Boundary Analyzer</h1>
+  <div class="subtitle">Does a straight line between two properties cross a major road? If yes, different neighborhood.</div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="card">
+      <h3>Subject Property</h3>
+      <label>Address</label>
+      <input type="text" id="subject-input" placeholder="e.g. 3708 Vilbig Rd, Dallas, TX" value="3708 Vilbig Rd, Dallas, TX" />
+    </div>
+
+    <div class="card">
+      <h3>Comp Addresses</h3>
+      <div id="comp-list">
+        <div class="comp-row"><input type="text" value="1026 Conroe St, Dallas, TX" /><button class="remove-btn" onclick="removeComp(this)">X</button></div>
+        <div class="comp-row"><input type="text" value="3701 Vilbig Rd, Dallas, TX" /><button class="remove-btn" onclick="removeComp(this)">X</button></div>
+        <div class="comp-row"><input type="text" value="3211 Wake St, Dallas, TX" /><button class="remove-btn" onclick="removeComp(this)">X</button></div>
+        <div class="comp-row"><input type="text" value="3522 Maybeth St, Dallas, TX" /><button class="remove-btn" onclick="removeComp(this)">X</button></div>
+      </div>
+      <button class="add-btn" onclick="addComp()">+ Add comp address</button>
+    </div>
+
+    <button class="analyze-btn" id="analyze-btn" onclick="analyze()">Analyze Neighborhoods</button>
+    <div class="status" id="status"></div>
+
+    <div class="results-table" id="results-container" style="display:none;">
+      <div class="card">
+        <h3>Results</h3>
+        <table>
+          <thead><tr><th>Address</th><th>Roads Crossed</th><th>Verdict</th></tr></thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="method-note">
+      Method: draws a straight line from subject to each comp. If the line crosses any OSM highway (motorway, trunk, primary, or secondary), the properties are in different neighborhoods. Data from OpenStreetMap via Overpass API.
+    </div>
+    <div class="footer">AugmentLoop | augmentloop.com</div>
+  </div>
+
+  <div class="main">
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span> Subject</span>
+      <span><span class="dot" style="background:#22c55e"></span> Same neighborhood</span>
+      <span><span class="dot" style="background:#ef4444"></span> Different neighborhood</span>
+      <span><span class="dot" style="background:#ca8a04;opacity:0.6"></span> Major roads (OSM)</span>
+    </div>
+    <div id="map"></div>
+    <div class="controls">
+      <label><input type="checkbox" id="toggle-roads" checked onchange="toggleRoads()"> Major roads</label>
+      <label><input type="checkbox" id="toggle-lines" checked onchange="toggleLines()"> Sight lines</label>
+      <label><input type="checkbox" id="toggle-routes" checked onchange="toggleRoutes()"> Driving routes</label>
+    </div>
+  </div>
+</div>
+
+<script>
+var map = L.map('map').setView([32.787, -96.848], 14);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', {
+  attribution: '&copy; OSM, &copy; CARTO', maxZoom: 19
+}).addTo(map);
+
+var markerLayer = L.layerGroup().addTo(map);
+var roadLayer = L.layerGroup().addTo(map);
+var lineLayer = L.layerGroup().addTo(map);
+var routeLayer = L.layerGroup().addTo(map);
+
+function toggleRoads() { document.getElementById('toggle-roads').checked ? map.addLayer(roadLayer) : map.removeLayer(roadLayer); }
+function toggleLines() { document.getElementById('toggle-lines').checked ? map.addLayer(lineLayer) : map.removeLayer(lineLayer); }
+function toggleRoutes() { document.getElementById('toggle-routes').checked ? map.addLayer(routeLayer) : map.removeLayer(routeLayer); }
+
+function addComp() {
+  var row = document.createElement('div');
+  row.className = 'comp-row';
+  row.innerHTML = '<input type="text" placeholder="Enter address..." /><button class="remove-btn" onclick="removeComp(this)">X</button>';
+  document.getElementById('comp-list').appendChild(row);
+  row.querySelector('input').focus();
+}
+function removeComp(btn) {
+  if (document.getElementById('comp-list').children.length > 1) btn.parentElement.remove();
+}
+
+async function geocode(address) {
+  var r = await fetch('https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
+    q: address, format: 'json', limit: 1, countrycodes: 'us'
+  }), { headers: { 'User-Agent': 'AugmentLoop-Demo/1.0' } });
+  var data = await r.json();
+  return data.length > 0 ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+}
+
+async function getMajorRoads(bbox) {
+  var query = '[out:json][timeout:30];(way["highway"~"^(motorway|trunk|primary|secondary)$"](' + bbox + '););out geom;';
+  var r = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST', body: 'data=' + encodeURIComponent(query),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+  var data = await r.json();
+  var roads = [];
+  data.elements.forEach(function(e) {
+    if (e.type === 'way' && e.geometry) {
+      var coords = e.geometry.map(function(g) { return [g.lat, g.lon]; });
+      if (coords.length >= 2) roads.push({ name: (e.tags||{}).name || 'unnamed', type: (e.tags||{}).highway || '', coords: coords });
+    }
+  });
+  return roads;
+}
+
+async function getRoute(subj, comp) {
+  try {
+    var r = await fetch('https://valhalla1.openstreetmap.de/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: [{ lat: subj.lat, lon: subj.lon }, { lat: comp.lat, lon: comp.lon }], costing: 'auto', costing_options: { auto: { use_highways: 1.0 } } })
+    });
+    var data = await r.json();
+    if (data.trip) return { shape: data.trip.legs[0].shape, dist: data.trip.summary.length };
+  } catch(e) {}
+  return null;
+}
+
+function decodePolyline(enc) {
+  var c = [], i = 0, lat = 0, lng = 0;
+  while (i < enc.length) {
+    for (var j = 0; j < 2; j++) {
+      var s = 0, r = 0, b;
+      do { b = enc.charCodeAt(i++) - 63; r |= (b & 0x1f) << s; s += 5; } while (b >= 0x20);
+      var d = (r & 1) ? ~(r >> 1) : (r >> 1);
+      if (j === 0) lat += d; else lng += d;
+    }
+    c.push([lat / 1e6, lng / 1e6]);
+  }
+  return c;
+}
+
+function ccw(A, B, C) { return (C[1]-A[1])*(B[0]-A[0]) > (B[1]-A[1])*(C[0]-A[0]); }
+function segsX(A, B, C, D) { return ccw(A,C,D) !== ccw(B,C,D) && ccw(A,B,C) !== ccw(A,B,D); }
+
+function checkCrossings(sp, cp, roads) {
+  var cx = {};
+  roads.forEach(function(road) {
+    for (var i = 0; i < road.coords.length - 1; i++) {
+      if (segsX(sp, cp, road.coords[i], road.coords[i+1])) { if (!cx[road.name]) cx[road.name] = road.type; break; }
+    }
+  });
+  return cx;
+}
+
+async function analyze() {
+  var btn = document.getElementById('analyze-btn');
+  var status = document.getElementById('status');
+  btn.disabled = true; status.className = 'status';
+  markerLayer.clearLayers(); roadLayer.clearLayers(); lineLayer.clearLayers(); routeLayer.clearLayers();
+  document.getElementById('results-container').style.display = 'none';
+
+  try {
+    status.innerHTML = '<span class="spinner"></span>Geocoding subject...';
+    var subAddr = document.getElementById('subject-input').value.trim();
+    if (!subAddr) { status.innerHTML = 'Enter a subject address.'; status.className = 'status error'; btn.disabled = false; return; }
+    var subCoord = await geocode(subAddr);
+    if (!subCoord) { status.innerHTML = 'Could not find subject address.'; status.className = 'status error'; btn.disabled = false; return; }
+
+    var compInputs = document.querySelectorAll('#comp-list input');
+    var comps = [];
+    for (var i = 0; i < compInputs.length; i++) {
+      var addr = compInputs[i].value.trim();
+      if (!addr) continue;
+      status.innerHTML = '<span class="spinner"></span>Geocoding ' + (i+1) + '/' + compInputs.length + '...';
+      await new Promise(function(r) { setTimeout(r, 1100); });
+      var coord = await geocode(addr);
+      comps.push(coord ? { addr: addr, lat: coord.lat, lon: coord.lon } : { addr: addr, error: true });
+    }
+    if (comps.filter(function(c){return !c.error;}).length === 0) {
+      status.innerHTML = 'No comp addresses found.'; status.className = 'status error'; btn.disabled = false; return;
+    }
+
+    status.innerHTML = '<span class="spinner"></span>Loading road data from OpenStreetMap...';
+    var lats = [subCoord.lat].concat(comps.filter(function(c){return !c.error;}).map(function(c){return c.lat;}));
+    var lons = [subCoord.lon].concat(comps.filter(function(c){return !c.error;}).map(function(c){return c.lon;}));
+    var bbox = (Math.min.apply(null,lats)-0.005)+','+(Math.min.apply(null,lons)-0.005)+','+(Math.max.apply(null,lats)+0.005)+','+(Math.max.apply(null,lons)+0.005);
+    var roads = await getMajorRoads(bbox);
+
+    var rc = { motorway:'#e11d48', trunk:'#ea580c', primary:'#d97706', secondary:'#ca8a04' };
+    roads.forEach(function(road) {
+      L.polyline(road.coords, { color: rc[road.type]||'#666', weight: 3, opacity: 0.35 }).addTo(roadLayer).bindPopup(road.name+' ('+road.type+')');
+    });
+
+    L.circleMarker([subCoord.lat, subCoord.lon], { radius: 11, fillColor: '#2563eb', color: '#1e40af', weight: 2, fillOpacity: 0.9 })
+      .addTo(markerLayer).bindPopup('<b>SUBJECT</b><br>'+subAddr);
+
+    var results = [];
+    for (var j = 0; j < comps.length; j++) {
+      var c = comps[j];
+      if (c.error) { results.push({ addr: c.addr, error: true }); continue; }
+      status.innerHTML = '<span class="spinner"></span>Analyzing ' + (j+1) + '/' + comps.length + '...';
+
+      var crossings = checkCrossings([subCoord.lat, subCoord.lon], [c.lat, c.lon], roads);
+      var names = Object.keys(crossings);
+      var isSame = names.length === 0;
+      var col = isSame ? '#22c55e' : '#ef4444';
+      var bdr = isSame ? '#16a34a' : '#dc2626';
+
+      var pop = '<b>'+c.addr+'</b><br>Roads crossed: '+(names.length ? names.map(function(n){return n+' ('+crossings[n]+')';}).join(', ') : 'None')+'<br>Verdict: <b>'+(isSame?'SAME':'DIFFERENT')+'</b>';
+      L.circleMarker([c.lat, c.lon], { radius: 9, fillColor: col, color: bdr, weight: 2, fillOpacity: 0.9 }).addTo(markerLayer).bindPopup(pop);
+      L.polyline([[subCoord.lat, subCoord.lon],[c.lat, c.lon]], { color: col, weight: 2, opacity: 0.5, dashArray: isSame ? '' : '6,4' }).addTo(lineLayer);
+
+      await new Promise(function(r){setTimeout(r, 400);});
+      var route = await getRoute(subCoord, c);
+      if (route && route.shape) L.polyline(decodePolyline(route.shape), { color: col, weight: 3, opacity: 0.55 }).addTo(routeLayer);
+
+      results.push({ addr: c.addr, crossings: crossings, isSame: isSame });
+    }
+
+    var bounds = L.latLngBounds([[subCoord.lat, subCoord.lon]]);
+    comps.forEach(function(c) { if (!c.error) bounds.extend([c.lat, c.lon]); });
+    map.fitBounds(bounds.pad(0.15));
+
+    var tbody = document.getElementById('results-body');
+    tbody.innerHTML = '';
+    results.forEach(function(r) {
+      var tr = document.createElement('tr');
+      if (r.error) { tr.innerHTML = '<td>'+r.addr+'</td><td colspan="2" class="fail">Not found</td>'; }
+      else {
+        var rds = Object.keys(r.crossings);
+        tr.innerHTML = '<td>'+r.addr+'</td><td>'+(rds.length ? rds.join(', ') : 'None')+'</td><td class="'+(r.isSame?'same':'diff')+'">'+(r.isSame?'SAME':'DIFFERENT')+'</td>';
+      }
+      tbody.appendChild(tr);
+    });
+    document.getElementById('results-container').style.display = 'block';
+    status.innerHTML = 'Done. ' + results.filter(function(r){return !r.error;}).length + ' addresses analyzed.';
+  } catch(e) {
+    status.innerHTML = 'Error: ' + e.message; status.className = 'status error';
+  }
+  btn.disabled = false;
+}
+
+window.addEventListener('load', function() { setTimeout(analyze, 500); });
+</script>
+</body>
+</html>

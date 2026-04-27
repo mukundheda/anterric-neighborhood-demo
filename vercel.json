@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/roads.js": {
+      "maxDuration": 30
+    },
+    "api/route.js": {
+      "maxDuration": 15
+    }
+  }
+}

@@ -2,29 +2,41 @@ module.exports = async (req, res) => {
   const { bbox } = req.query;
   if (!bbox) return res.status(400).json({ error: "Missing bbox parameter" });
 
-  try {
-    const query = '[out:json][timeout:25];(way["highway"~"^(motorway|trunk|primary|secondary)$"](' + bbox + '););out geom;';
+  const query = '[out:json][timeout:25];(way["highway"~"^(motorway|trunk|primary|secondary)$"](' + bbox + '););out geom;';
+  const body = "data=" + encodeURIComponent(query);
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "AugmentLoop-Demo/1.0 (neighborhood boundary tool)",
+  };
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+  // Try primary, fall back to mirror
+  const endpoints = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+  ];
 
-    const r = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: "data=" + encodeURIComponent(query),
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  for (const url of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
-    if (!r.ok) {
-      const text = await r.text();
-      return res.status(502).json({ error: "Overpass returned " + r.status, detail: text.substring(0, 200) });
+      const r = await fetch(url, {
+        method: "POST",
+        body: body,
+        headers: headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (r.ok) {
+        const data = await r.json();
+        res.setHeader("Cache-Control", "s-maxage=3600");
+        return res.json(data);
+      }
+    } catch (err) {
+      // Try next endpoint
     }
-
-    const data = await r.json();
-    res.setHeader("Cache-Control", "s-maxage=3600");
-    return res.json(data);
-  } catch (err) {
-    return res.status(500).json({ error: err.message || "Unknown error" });
   }
+
+  return res.status(502).json({ error: "All Overpass endpoints failed" });
 };

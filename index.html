@@ -154,19 +154,13 @@ function removeComp(btn) {
 }
 
 async function geocode(address) {
-  var r = await fetch('https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
-    q: address, format: 'json', limit: 1, countrycodes: 'us'
-  }), { headers: { 'User-Agent': 'AugmentLoop-Demo/1.0' } });
+  var r = await fetch('/api/geocode?' + new URLSearchParams({ q: address }));
   var data = await r.json();
   return data.length > 0 ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
 }
 
 async function getMajorRoads(bbox) {
-  var query = '[out:json][timeout:30];(way["highway"~"^(motorway|trunk|primary|secondary)$"](' + bbox + '););out geom;';
-  var r = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST', body: 'data=' + encodeURIComponent(query),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  });
+  var r = await fetch('/api/roads?' + new URLSearchParams({ bbox: bbox }));
   var data = await r.json();
   var roads = [];
   data.elements.forEach(function(e) {
@@ -180,7 +174,7 @@ async function getMajorRoads(bbox) {
 
 async function getRoute(subj, comp) {
   try {
-    var r = await fetch('https://valhalla1.openstreetmap.de/route', {
+    var r = await fetch('/api/route', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ locations: [{ lat: subj.lat, lon: subj.lon }, { lat: comp.lat, lon: comp.lon }], costing: 'auto', costing_options: { auto: { use_highways: 1.0 } } })
     });
